@@ -1,0 +1,13 @@
+---
+- name: Deploy LAMP stack and PHP application
+  hosts: Slave
+  become: true
+  tasks:
+    - name: Copy deploy_lamp.sh script to Slave node
+      copy:
+        src: deploy_lamp.sh
+        dest: /c/Users/ToBeSold/desktop/Project/deploy_lamp.sh
+        mode: 0755
+
+    - name: Execute deploy_lamp.sh script on Slave node
+      shell: /c/Users/ToBeSold/desktop/Project/deploy_lamp.sh

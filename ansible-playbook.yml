@@ -1,0 +1,271 @@
+
+---
+- name: Setup Debian Server with Laravel Project
+  hosts: all
+  remote_user: root
+
+
+  pre_tasks:
+    - name: Update Cache & Upgrade packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: true
+
+  vars:
+    php8_and_modules: php8.1, libapache2-mod-php8.1, php8.1-cli, php8.1-common, php8.1-mysql, php8.1-xml, php8.1-xmlrpc, php8.1-curl, php8.1-gd, php8.1-imagick, php8.1-cli, php8.1-dev, php8.1-imap, php8.1-mbstring, php8.1-opcache, php8.1-soap, php8.1-zip, php8.1-intl, php8.1-bcmath
+    mysql_root_password: root
+
+
+  tasks:
+    - name: Set timezone
+      shell: timedatectl set-timezone Africa/Lagos
+
+    - name: Install Apache
+      ansible.builtin.apt:
+        name:
+          - apache2
+          - apache2-utils
+          - elinks
+    - name: Install PHP prerequisites
+      ansible.builtin.apt:
+        name:
+          - lsb-release
+          - ca-certificates
+          - apt-transport-https
+          - software-properties-common
+          - gnupg2
+          - curl
+          - wget
+    - name: Update Sury source list
+      ansible.builtin.shell: wget -O /etc/apt/trusted.gpg.d/php.gpg https://packages.sury.org/php/apt.gpg
+    - name: Import Sury GPG Key
+      ansible.builtin.shell: echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/php.list
+    - name: Update Cache
+      ansible.builtin.shell: apt update -y
+    - name: Upgrade Cache
+      ansible.builtin.shell: apt upgrade -y
+    - name: Install PHP 8 and modules
+      ansible.builtin.apt:
+        name: '{{ php8_and_modules }}'
+    - name: Add Essentials
+      ansible.builtin.apt:
+        name:
+          - debconf-utils
+          - libaio1
+    - name: Disable MySQL setup prompt
+      ansible.builtin.shell:
+        debconf-set-selections <<EOF
+        mysql-apt-config mysql-apt-config/select-server select mysql-8.0
+        mysql-community-server mysql-community-server/root-pass password {{ mysql_root_password }}
+        mysql-community-server mysql-community-server/re-root-pass password {{ mysql_root_password }}
+        EOF
+    - name: Bypass MySQL setup prompt
+      ansible.builtin.shell:
+        wget --user-agent="Mozilla" -O /tmp/mysql-apt-config_0.8.24-1_all.deb https://dev.mysql.com/get/mysql-apt-config_0.8.24-1_all.deb
+
+    - name: Configure MySQL Package
+      ansible.builtin.shell:
+        sudo DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/mysql-apt-config_0.8.24-1_all.deb < /dev/null > /dev/null
+    - name: Update Cache
+      ansible.builtin.shell: apt update -y
+    - name: Upgrade Cache
+      ansible.builtin.shell: apt upgrade -y
+    - name: Install MySQL
+      ansible.builtin.shell:
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install mysql-server mysql-client --assume-yes --force-yes < /dev/null > /dev/null
+    - name: Create mysql database
+      ansible.builtin.command: 'mysql -ne "{{ item }}"'
+      with_items:
+        - CREATE DATABASE Anny
+    - name: Create mysql user
+      ansible.builtin.command: 'mysql -ne "{{ item }}"'
+      with_items:
+        - CREATE USER 'anny'@'localhost' IDENTIFIED BY 'anny'
+    - name: Grant mysql user privileges
+      ansible.builtin.command: 'mysql -ne "{{ item }}"'
+      with_items:
+        - GRANT ALL PRIVILEGES ON anny.* TO 'anny'@'localhost'
+    - name: Reload privilege tables
+      ansible.builtin.command: 'mysql -ne "{{ item }}"'
+      with_items:
+        - FLUSH PRIVILEGES
+    - name: Install Git
+      ansible.builtin.apt:
+        name:
+          - git
+    - name: Install Composer Step 1
+      ansible.builtin.shell: php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+    - name: Install Composer Step 2
+      ansible.builtin.shell: php -r "if (hash_file('sha384', 'composer-setup.php') === '55ce33d7678c5a611085589f1f3ddf8b3c52d662cd01d4ba75c0ee0459970c2200a51f492d557530c71c15d8dba01eae') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+    - name: Install Composer Step 3
+      ansible.builtin.shell: php composer-setup.php
+    - name: Install Composer Step 4
+      ansible.builtin.shell: php -r "unlink('composer-setup.php');"
+    # - name: Set COMPOSER_ALLOW_SUPERUSER=1 environment variable
+    #   ansible.builtin.shell: export COMPOSER_ALLOW_SUPERUSER=1 
+
+    - name: Move Composer to Global
+      ansible.builtin.shell: mv composer.phar /usr/local/bin/composer
+    - name: Copy PGSQL script
+      ansible.builtin.copy:
+        src: /root/ansible/pg_script.sh
+        dest: /root/pg_script.sh
+        owner: root
+        group: root
+        mode: '0775'
+    - name: Execute PGSQL script
+      ansible.builtin.shell: /root/pg_script.sh
+    - name: Clone Laravel Repo
+      ansible.builtin.shell: git clone https://github.com/f1amy/laravel-realworld-example-app.git annyexam
+    - name: Rename Laravel Repo
+      ansible.builtin.shell: mv brightexam /var/www/annyexam
+    - name: Create env file
+      ansible.builtin.copy:
+        dest: /var/www/annyexam/.env
+        content: |
+          APP_NAME="Laravel Real World Example App"
+          APP_ENV=local
+          APP_KEY=
+          APP_DEBUG=true
+          APP_URL=https://server.annybalogun.me
+          APP_PORT=3000
+
+          LOG_CHANNEL=stack
+          LOG_DEPRECATIONS_CHANNEL=null
+          LOG_LEVEL=debug
+
+          DB_CONNECTION=mysql
+          DB_HOST=localhost
+          DB_PORT=3306
+          DB_DATABASE=anny
+          DB_USERNAME=anny
+          DB_PASSWORD=anny
+
+          BROADCAST_DRIVER=log
+          CACHE_DRIVER=file
+          FILESYSTEM_DISK=local
+          QUEUE_CONNECTION=sync
+          SESSION_DRIVER=file
+          SESSION_LIFETIME=120
+
+          MEMCACHED_HOST=127.0.0.1
+
+          REDIS_HOST=127.0.0.1
+          REDIS_PASSWORD=null
+          REDIS_PORT=6379
+
+          MAIL_MAILER=smtp
+          MAIL_HOST=mailhog
+          MAIL_PORT=1025
+          MAIL_USERNAME=null
+          MAIL_PASSWORD=null
+          MAIL_ENCRYPTION=null
+          MAIL_FROM_ADDRESS="hello@example.com"
+          MAIL_FROM_NAME="${APP_NAME}"
+
+          AWS_ACCESS_KEY_ID=
+          AWS_SECRET_ACCESS_KEY=
+          AWS_DEFAULT_REGION=us-east-1
+          AWS_BUCKET=
+          AWS_USE_PATH_STYLE_ENDPOINT=false
+
+          PUSHER_APP_ID=
+          PUSHER_APP_KEY=
+          PUSHER_APP_SECRET=
+          PUSHER_APP_CLUSTER=mt1
+
+          MIX_PUSHER_APP_KEY="${PUSHER_APP_KEY}"
+          MIX_PUSHER_APP_CLUSTER="${PUSHER_APP_CLUSTER}"
+
+          L5_SWAGGER_GENERATE_ALWAYS=true
+          SAIL_XDEBUG_MODE=develop,debug
+          SAIL_SKIP_CHECKS=true
+        mode: '0755'
+    - name: Add frontend route
+      ansible.builtin.blockinfile:
+        path: /var/www/annyexam/routes/web.php
+        marker: ""
+        block: |
+          Route::get('/', function () {
+            return view('welcome');
+          });
+      
+    - name: change directory to home
+      ansible.builtin.shell: cd ~
+      
+    - name: Set owner and permissions
+      ansible.builtin.shell: chown -R www-data:www-data /var/www/annyexam && chmod -R 755 /var/www/annyexam
+      
+    - name: chgrp
+      ansible.builtin.shell: chgrp -R www-data /var/www/annyexam/storage /var/www/annyexam/bootstrap/cache
+      
+    - name: chmod
+      ansible.builtin.shell: chmod -R ug+rwx /var/www/annyexam/storage /var/www/annyexam/bootstrap/cache 
+    - name: Create Project
+      ansible.builtin.shell: cd /var/www/annyexam && composer create-project --no-interaction
+    - name: php artisan migrate
+      shell: cd /var/www/annyexam && sudo php artisan migrate --seed
+    - name: Create htaccess file
+      copy:
+        dest: "/var/www/annyexam/.htaccess"
+        content: |
+          <IfModule mod_rewrite.c>
+          RewriteEngine On
+          RewriteCond %{HTTP:Authorization} .
+          RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteRule ^ index.php [L]
+          </IfModule>
+    - name: Create virtual host
+      copy:
+        dest: "/etc/apache2/sites-available/annyexam.conf"
+        content: |
+         <VirtualHost *:80>
+            ServerAdmin admin@annybalogun.me
+            ServerName server.annybalogun.me
+            ServerAlias www.odeybright.me
+            DocumentRoot /var/www/annyexam/public/
+            <Directory /var/www/annyexam>
+              Options Indexes FollowSymLinks
+              AllowOverride All
+              Require all granted
+            </Directory>
+           ErrorLog ${APACHE_LOG_DIR}/error.log
+           CustomLog ${APACHE_LOG_DIR}/access.log combined
+         </VirtualHost>
+    - name: Enable virtual host
+      ansible.builtin.shell: a2ensite annyexam.conf
+    - name: Disable default virtual host
+      ansible.builtin.shell: a2dissite 000-default.conf
+
+    - name: Enable Apache Modules
+      shell: a2enmod {{ item }}
+      with_items:
+        - rewrite
+
+    - name: Restart Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted
+      
+    - name: Update cache
+      ansible.builtin.shell: apt update -y
+      
+    - name: lets encrypt{ssl} step 1
+      ansible.builtin.shell: apt install snapd -y
+     
+    - name: lets encrypt{ssl} step 2
+      ansible.builtin.shell: snap install core
+      
+    - name: lets encrypt{ssl} step 3
+      ansible.builtin.shell: snap refresh core
+      
+    - name: Certbot installation
+      ansible.builtin.shell: sudo snap install --classic certbot
+    
+    - name: Certbot configuration
+      ansible.builtin.shell: sudo ln -s /snap/bin/certbot /usr/bin/certbot
+    
+    - name: certificates installation
+      ansible.builtin.shell: yes | certbot --apache --agree-tos --redirect -m youremail@email.com -d annybalogun.me -d www.annybalogun.me
